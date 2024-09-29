@@ -10,3 +10,7 @@ pydub
 pillow
 gtts
 moviepy
+django
+mysqlclient
+SQLAlchemy
+sqlparse
