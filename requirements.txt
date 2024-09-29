@@ -6,7 +6,6 @@ flask
 flask_cors
 pdfminer
 pdfminer.six==20201018
-concurrent
 pydub
 pillow
 gtts
