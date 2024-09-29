@@ -49,9 +49,9 @@ def upload_file():
         return jsonify({'error': 'Invalid file format. Please upload a PDF file.'}), 400
 
 # File paths for storing MCQs and answers
-MCQ_FILE_PATH = os.path.join(r"../", 'mcqs.txt')
-OPTIONS_FILE_PATH = os.path.join(r"../", 'options.txt')
-ANSWERS_FILE_PATH = os.path.join(r"../", 'answers.txt')
+MCQ_FILE_PATH = os.path.join(r"./", 'mcqs.txt')
+OPTIONS_FILE_PATH = os.path.join(r"./", 'options.txt')
+ANSWERS_FILE_PATH = os.path.join(r"./", 'answers.txt')
 
 def load_mcqs():
     """Load MCQs, options, and answers from text files."""
