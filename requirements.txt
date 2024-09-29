@@ -1,11 +1,10 @@
-streamlit
 langchain_google_genai
 langchain
 PyPDF2
 werkzeug
 flask
 flask_cors
-pdfminer.high_level
+pdfminer
 pydub
 gtts
 moviepy
