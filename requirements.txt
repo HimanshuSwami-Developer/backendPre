@@ -3,7 +3,7 @@ langchain_google_genai
 langchain
 PyPDF2
 werkzeug
-sqlite
+pysqlite
 flask
 flask_cors
 re
