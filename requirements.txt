@@ -3,7 +3,8 @@ langchain_google_genai
 langchain
 PyPDF2
 werkzeug
-sqlite3
+sqlite
+flask
 flask_cors
 re
 pdfminer
