@@ -1,3 +1,4 @@
+import glob
 import re
 import sqlite3
 import PyPDF2
@@ -48,90 +49,86 @@ def upload_file():
     else:
         return jsonify({'error': 'Invalid file format. Please upload a PDF file.'}), 400
 
-# File paths for storing MCQs and answers
-MCQ_FILE_PATH = os.path.join(r"./", 'mcqs.txt')
-OPTIONS_FILE_PATH = os.path.join(r"./", 'options.txt')
-ANSWERS_FILE_PATH = os.path.join(r"./", 'answers.txt')
-
-def load_mcqs():
-    """Load MCQs, options, and answers from text files."""
-    try:
-        with open(MCQ_FILE_PATH, 'r', encoding='utf-8') as mcq_file:
-            mcqs = mcq_file.readlines()
-
-        with open(OPTIONS_FILE_PATH, 'r', encoding='utf-8') as options_file:
-            options = options_file.readlines()
-
-        with open(ANSWERS_FILE_PATH, 'r', encoding='utf-8') as answers_file:
-            answers = answers_file.readlines()
-
-        return mcqs, options, answers
-    except FileNotFoundError:
-        raise Exception("MCQs or related files not found. Please ensure they are generated.")
-
-
-
 @app.route('/get_mcqs', methods=['GET'])
 def get_mcqs():
-    """Retrieve MCQs, options, and send as JSON response."""
+    db_path = os.path.join(r"../Backend", 'mcq_database.db')
+ 
     try:
-        mcqs, options, _ = load_mcqs()  # We don't need answers here
-
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id, question FROM mcqs')
+        questions = cursor.fetchall()
         mcqs_data = []
-        for idx, question in enumerate(mcqs):
-            question_id = idx + 1  # Simulate an ID
+        
+        for question_id, question in questions:
+            cursor.execute('SELECT option_text FROM options WHERE question_id = ?', (question_id,))
+            options = cursor.fetchall()
             mcqs_data.append({
                 'id': question_id,
-                'question': question.strip(),
-                'options': [opt.strip() for opt in options[idx].split(';')]  # Assuming options are saved in "opt1;opt2;opt3;opt4" format
+                'question': question,
+                'options': [option[0] for option in options]
             })
-
+        
+        conn.close()
         return jsonify(mcqs_data), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
+    
 @app.route('/submit_answers', methods=['POST'])
 def submit_answers():
-    """Check submitted answers and calculate score."""
+    db_path = os.path.join(r"../Backend", 'mcq_database.db')
+
     try:
         data = request.json
+        print(data)
         if 'answers' not in data or not isinstance(data['answers'], list):
             return jsonify({'error': 'No answers provided or invalid format'}), 400
         
         answers = data['answers']
         score = 0
         
-        # Load correct answers from file
-        _, _, correct_answers = load_mcqs()
-
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
         for answer in answers:
-            question_id = answer.get('question_id')
-            user_answer = answer.get('selected_option')
-
+            question_id = answer.get('question_id')  
+            user_answer = answer.get('selected_option') 
+            
             if question_id is None or user_answer is None:
-                continue
+                continue 
 
-            # Fetch the correct answer
-            correct_answer = correct_answers[question_id - 1].strip()
+            cursor.execute('SELECT answer FROM answers WHERE question_id = ?', (question_id,))
+            correct_answer = cursor.fetchone()
+            
+            if correct_answer is not None:
+                correct_answer = correct_answer[0]  
+                print(f"Correct answer: {correct_answer}")
 
-            # Use regex to extract the correct answer letter (e.g., 'a' from 'Answer a...')
-            correct_match = re.search(r'Answer\s+([a-d])', correct_answer, re.IGNORECASE)
-            user_match = re.search(r'Answer\s+([a-d])', user_answer, re.IGNORECASE)
+                # Use regex to extract the correct answer letter (e.g., 'a' from 'Answer a...')
+                correct_match = re.search(r'Answer\s+([a-d])', correct_answer, re.IGNORECASE)
+                
+                user_match = re.search(r'Answer\s+([a-d])', user_answer, re.IGNORECASE)
 
-            if correct_match and user_match:
-                correct_letter = correct_match.group(1).strip().lower()
-                user_letter = user_match.group(1).strip().lower()
+                if correct_match and user_match:
+                    correct_letter = correct_match.group(1).strip().lower()
+                    user_letter = user_match.group(1).strip().lower()
 
-                if user_letter == correct_letter:
-                    score += 1  # Increment score if the answer is correct
+                    print(f"User answer: {user_letter}, Correct answer: {correct_letter}")
 
-        # Return score and total number of questions answered
+                    if user_letter == correct_letter:
+                        score += 1  # Increment score if the answer is correct
+                        print(f"Score: {score}")
+        
+        # Close the database connection
+        conn.close()
+        save_score_to_database(score)
         return jsonify({'score': score, 'total': len(answers)}), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-        
+
 # audio file and txt file
 @app.route('/check-files', methods=['GET'])
 def check_files():
@@ -253,6 +250,49 @@ def ask_question():
         return jsonify({'answer': "I don't know."})
     
     return jsonify({'answer': answer_text.strip()})
+
+
+
+# Define the folder paths
+PDF_FOLDER = './input_pdfs'     
+KEYWORDS_FOLDER = './Keywords'  
+OUTPUT_TXT_FOLDER = './output_txt'
+
+# Define file extensions
+PDF_EXT = '*.pdf'
+VIDEO_EXT = '*.mp4' 
+AUDIO_EXT = '*.mp3' 
+TXT_EXT = '*.txt' 
+
+@app.route('/delete-file', methods=['DELETE'])
+def delete_files():
+    try:
+        # Delete PDF files from input_pdfs folder
+        pdf_files = glob.glob(os.path.join(PDF_FOLDER, PDF_EXT))
+        for pdf_file in pdf_files:
+            os.remove(pdf_file)
+
+        # Delete video files from Keywords folder
+        video_files = glob.glob(os.path.join(KEYWORDS_FOLDER, VIDEO_EXT))
+        for video_file in video_files:
+            os.remove(video_file)
+
+        # Delete audio files from output_txt folder
+        audio_files = glob.glob(os.path.join(OUTPUT_TXT_FOLDER, AUDIO_EXT))
+        for audio_file in audio_files:
+            os.remove(audio_file)
+        
+        txt_files = glob.glob(os.path.join(OUTPUT_TXT_FOLDER, TXT_EXT))
+        for txt_file in txt_files:
+            os.remove(txt_file)
+
+        # Return a success message
+        return jsonify({'message': 'All specified files deleted successfully'}), 200
+
+    except Exception as e:
+        # Return an error message if something goes wrong
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     os.makedirs(input_folder, exist_ok=True)
