@@ -1,12 +1,11 @@
 import google.generativeai as genai
 import PyPDF2
 import re
+import sqlite3
 import os
 
-# Configure the Gemini API
 genai.configure(api_key="AIzaSyAcpkdxOkgN0iPb_tgq3ZV_pFVpotx_-gA")
 
-# Generation config for Gemini API
 generation_config = {
     "temperature": 1,
     "top_p": 0.95,
@@ -15,13 +14,11 @@ generation_config = {
     "response_mime_type": "text/plain",
 }
 
-# Create the generative model
 model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
     generation_config=generation_config,
 )
 
-# Function to extract text from the PDF
 def extract_text_from_pdf(pdf_path):
     with open(pdf_path, "rb") as file:
         reader = PyPDF2.PdfReader(file)
@@ -30,142 +27,204 @@ def extract_text_from_pdf(pdf_path):
             text += page.extract_text() or ""
     return text
 
-# Function to generate MCQs using Gemini API
 def generate_mcqs(text):
-    prompt = f"Generate MCQs with always 4 options (labeled a, b, c, d) and an answer based on the following text:\n\n{text}"
+    prompt = f"Generate only mcqs with always 4 options in alphabetical order only and answer based on the following text:\n\n{text}"
     response = model.generate_content(prompt)
     if not response.text:
         raise ValueError("No MCQs were generated. Check the input text.")
     return response.text.strip()
 
-# Function to clean text (removing special characters)
 def clean_text(text):
     cleaned_text = re.sub(r"[*]", "", text)
     cleaned_text = re.sub(r"[^\w\s,.?]", "", cleaned_text)
     return cleaned_text
 
-# Delete files if they exist
-def delete_files_if_exist(*file_paths):
-    for file_path in file_paths:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+def delete_database_if_exists(db_path):
+    if os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('DROP TABLE IF EXISTS options')
+        cursor.execute('DROP TABLE IF EXISTS mcqs')
+        cursor.execute('DROP TABLE IF EXISTS answers')
+        conn.commit()
+        conn.close()
 
-# Save questions to a file
-def save_questions_to_file(mcqs, question_file):
+def save_questions_to_database(mcqs):
+    conn = sqlite3.connect('mcq_database.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS mcqs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT
+    )''')
+
     current_question = ""
-    with open(question_file, 'w', encoding='utf-8') as f:
-        for line in mcqs.splitlines():
-            line = line.strip()
-            if re.match(r'^\d+\.', line):  # Check for question number
-                if current_question:
-                    f.write(current_question + '\n')
-                current_question = line
-        if current_question:
-            f.write(current_question + '\n')
+    for line in mcqs.splitlines():
+        line = line.strip()
+        if re.match(r'^\d+\.', line):
+            if current_question:
+                cursor.execute('INSERT INTO mcqs (question) VALUES (?)', (current_question,))
+            current_question = line
 
-# Save options to a file
-def save_options_to_file(mcqs, options_file):
-    with open(options_file, 'w', encoding='utf-8') as f:
-        for line in mcqs.splitlines():
-            if re.match(r'^[a-d]\s', line):  # Match for options (a, b, c, d)
-                f.write(line + '\n')
+    if current_question:
+        cursor.execute('INSERT INTO mcqs (question) VALUES (?)', (current_question,))
 
-# Save answers to a file
-def save_answers_to_file(mcqs, answers_file):
-    with open(answers_file, 'w', encoding='utf-8') as f:
-        for line in mcqs.splitlines():
-            if re.match(r'^Answer', line):  # Match for the answer line
-                f.write(line + '\n')
+    conn.commit()
+    conn.close()
 
-# Function to ask questions from the user and calculate the score
-def ask_questions(question_file, options_file, answers_file):
+def save_options_to_database(mcqs):
+    conn = sqlite3.connect('mcq_database.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS options (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_id INTEGER,
+        option_text TEXT,
+        FOREIGN KEY (question_id) REFERENCES mcqs(id)
+    )''')
+
+    current_question_id = None
+    options = []
+    
+    cursor.execute('SELECT id, question FROM mcqs')
+    questions = cursor.fetchall()
+    
+    for line in mcqs.splitlines():
+        line = line.strip()
+        if re.match(r'^\d+\.', line):
+            if current_question_id is not None and options:
+                for option in options:
+                    cursor.execute('INSERT INTO options (question_id, option_text) VALUES (?, ?)', 
+                                   (current_question_id, option))
+            current_question = line
+            current_question_id = next((q[0] for q in questions if q[1] == current_question), None)
+            options = []
+        elif re.match(r'^[a-d]\s', line):
+            options.append(line)
+
+    if current_question_id is not None and options:
+        for option in options:
+            cursor.execute('INSERT INTO options (question_id, option_text) VALUES (?, ?)', 
+                           (current_question_id, option))
+
+    conn.commit()
+    conn.close()
+
+def save_answers_to_database(mcqs):
+    conn = sqlite3.connect('mcq_database.db')
+    cursor = conn.cursor()
+
+    cursor.execute('''CREATE TABLE IF NOT EXISTS answers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_id INTEGER,
+        answer TEXT,
+        FOREIGN KEY (question_id) REFERENCES mcqs(id)
+    )''')
+
+    current_question_id = None
+    correct_answer = None
+    
+    cursor.execute('SELECT id, question FROM mcqs')
+    questions = cursor.fetchall()
+
+    for line in mcqs.splitlines():
+        line = line.strip()
+        if re.match(r'^\d+\.', line):
+            current_question = line
+            current_question_id = next((q[0] for q in questions if q[1] == current_question), None)
+        elif re.match(r'^Answer', line):
+            correct_answer = line
+
+            if current_question_id is not None and correct_answer:
+                cursor.execute('INSERT INTO answers (question_id, answer) VALUES (?, ?)',
+                               (current_question_id, correct_answer))
+                correct_answer = None
+
+    conn.commit()
+    conn.close()
+
+def ask_questions():
+    conn = sqlite3.connect('mcq_database.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT id, question FROM mcqs')
+    questions = cursor.fetchall()
     score = 0
-    with open(question_file, 'r', encoding='utf-8') as qf, \
-         open(options_file, 'r', encoding='utf-8') as of, \
-         open(answers_file, 'r', encoding='utf-8') as af:
+
+    for question_id, question in questions:
+        print(question)
         
-        questions = qf.readlines()
-        options = of.readlines()
-        answers = af.readlines()
+        cursor.execute('SELECT option_text FROM options WHERE question_id = ?', (question_id,))
+        options = cursor.fetchall()
+        
+        for option in options:
+            print(option[0])
 
-        question_idx = 0
-        for question in questions:
-            print(question.strip())
+        answer = input("Your answer (a/b/c/d): ").strip().lower()
+        
+        cursor.execute('SELECT answer FROM answers WHERE question_id = ?', (question_id,))
+        correct_answer = cursor.fetchone()[0]
 
-            # Display 4 options for the current question
-            for i in range(4):
-                print(options[question_idx * 4 + i].strip())
-            
-            answer = input("Your answer (a/b/c/d): ").strip().lower()
-
-            # Extract the correct answer option
-            correct_answer = answers[question_idx].split()[1].strip().lower()
-
-            if answer == correct_answer:
-                score += 1
-
-            question_idx += 1
+        if answer == correct_answer[0].lower():
+            score += 1
 
     print(f"Your score: {score}/{len(questions)}")
+    conn.close()
+
     return score
 
-# Function to save the score to a file
-def save_score_to_file(score, score_file):
-    with open(score_file, 'w', encoding='utf-8') as f:
-        f.write(f"Score: {score}\n")
+def save_score_to_database(score):
+    conn = sqlite3.connect('mcq_database.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        score INTEGER
+    )''')
 
-# Save raw MCQs to a file
+    cursor.execute('INSERT INTO scores (score) VALUES (?)', (score,))
+    
+    conn.commit()
+    conn.close()
+
 def save_mcqs_to_file(mcqs, mcqs_path):
     with open(mcqs_path, 'w', encoding='utf-8') as f:
         f.write(mcqs)
 
-# Save cleaned MCQs to a file
 def save_cleaned_text_to_file(cleaned_text, cleaned_txt_path):
     with open(cleaned_txt_path, 'w', encoding='utf-8') as f:
         f.write(cleaned_text)
 
-# Example paths (adjust these paths as necessary)
-pdf_path = r"D:\Projects ALL\Practice Apps models\preception\Backend\input_pdfs\geah103.pdf"
+# pdf_path = r"D:\Projects ALL\AI Based\P-Dio\PRECEPTION\input_pdfs\geah101.pdf"
+db_path = 'mcq_database.db'
 mcqs_path = './mcqs.txt'
 cleaned_txt_path = './cleaned_mcqs.txt'
-question_file = './questions.txt'
-options_file = './options.txt'
-answers_file = './answers.txt'
-score_file = './score.txt'
 
 try:
-    # Delete previous files if they exist
-    delete_files_if_exist(mcqs_path, cleaned_txt_path, question_file, options_file, answers_file, score_file)
+    delete_database_if_exists(db_path)
 
-    # Extract text from the PDF
-    extracted_text = extract_text_from_pdf(pdf_path)
-    if not extracted_text:
-        raise ValueError("No text extracted from PDF. Check the PDF file.")
+    # extracted_text = extract_text_from_pdf(pdf_path)
+    # if not extracted_text:
+    #     raise ValueError("No text extracted from PDF. Check the PDF file.")
 
-    # Generate MCQs
-    mcqs = generate_mcqs(extracted_text)
+    # mcqs = generate_mcqs(extracted_text)
 
-    # Save raw MCQs to a file
-    save_mcqs_to_file(mcqs, mcqs_path)
+    # save_mcqs_to_file(mcqs, mcqs_path)
 
-    # Clean the MCQs
-    cleaned_mcqs = clean_text(mcqs)
+    # cleaned_mcqs = clean_text(mcqs)
+    # save_cleaned_text_to_file(cleaned_mcqs, cleaned_txt_path)
 
-    # Save cleaned MCQs to a file
-    save_cleaned_text_to_file(cleaned_mcqs, cleaned_txt_path)
+    # save_questions_to_database(cleaned_mcqs)
 
-    # Save questions, options, and answers to separate files
-    save_questions_to_file(cleaned_mcqs, question_file)
-    save_options_to_file(cleaned_mcqs, options_file)
-    save_answers_to_file(cleaned_mcqs, answers_file)
+    # save_options_to_database(cleaned_mcqs)
 
-    # Ask questions to the user and calculate the score
-    score = ask_questions(question_file, options_file, answers_file)
+    # save_answers_to_database(cleaned_mcqs)
 
-    # Save the score to a file
-    save_score_to_file(score, score_file)
+    # print("MCQs generated, cleaned, and saved to the databases and files successfully.")
 
-    print("MCQs generated, cleaned, and saved to the files successfully.")
+    # score = ask_questions()
+
+    # save_score_to_database(score)
 
 except Exception as e:
     print(f"An error occurred: {str(e)}")
