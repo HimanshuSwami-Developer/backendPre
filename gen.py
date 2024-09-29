@@ -2,7 +2,7 @@ import os
 import re
 import time
 import threading
-from pdfminer.high_level import extract_text
+from pdfminer import extract_text
 import google.generativeai as genai
 from gtts import gTTS
 from pydub import AudioSegment, effects
