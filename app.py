@@ -42,7 +42,7 @@ def upload_file():
 
         threading.Thread(target=process_single_pdf, args=(filename, input_folder, output_folder)).start()
         threading.Thread(target=process_second_pdf, args=(filename, input_folder, output_folder)).start()
-        threading.Thread(target=process_files_for_keywords, args=(output_folder, image_folder, output_video)).start()
+        # threading.Thread(target=process_files_for_keywords, args=(output_folder, image_folder, output_video)).start()
 
         return jsonify({'message': 'File uploaded and processing started'}), 200
     else:
