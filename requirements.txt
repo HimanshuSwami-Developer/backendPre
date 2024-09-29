@@ -5,7 +5,7 @@ PyPDF2
 werkzeug
 flask
 flask_cors
-pdfminer
+pdfminer.high_level
 pydub
 gtts
 moviepy
