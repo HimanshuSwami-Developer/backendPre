@@ -2,15 +2,10 @@ langchain_google_genai
 langchain
 PyPDF2
 werkzeug
-flask
+sqlite3
 flask_cors
+re
 pdfminer
-pdfminer.six==20201018
 pydub
-pillow
 gtts
 moviepy
-django
-mysqlclient
-SQLAlchemy
-sqlparse

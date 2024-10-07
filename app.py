@@ -41,7 +41,7 @@ def upload_file():
         file_path = os.path.join(input_folder, filename)
         file.save(file_path)
 
-        threading.Thread(target=process_single_pdf, args=(filename, input_folder, output_folder)).start()
+        threading.Thread(target=process_single_pdf, args=(filename, input_folder, output_folder,image_folder,output_video)).start()
         threading.Thread(target=process_second_pdf, args=(filename, input_folder, output_folder)).start()
         # threading.Thread(target=process_files_for_keywords, args=(output_folder, image_folder, output_video)).start()
 
@@ -151,13 +151,13 @@ def check_files():
         return jsonify({'files_exist': False, 'missing_files': {'summary': file1 is None, 'audio': file2 is None}})
 
 # Video File
-@app.route('/check-video', methods=['GET'])
-def check_video():
+@app.route('/check-video/<filename>', methods=['GET'])
+def check_video(filename):
     folder_path = r"./Keywords"
-    
+        
     files = os.listdir(folder_path)
 
-    file = next((f for f in files if "merged_video.mp4" in f), None)
+    file = next((f for f in files if f"{filename}_video_with_audio.mp4" in f), None)
 
     print(f"video File: {file}\n")
 

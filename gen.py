@@ -6,6 +6,7 @@ from pdfminer.high_level import extract_text
 import google.generativeai as genai
 from gtts import gTTS
 from pydub import AudioSegment, effects
+from video import process_files_for_keywords
 
 # Configure the Gemini API
 genai.configure(api_key="AIzaSyAcpkdxOkgN0iPb_tgq3ZV_pFVpotx_-gA")
@@ -85,9 +86,9 @@ def generate_audio_from_text(text, audio_output_path):
 # Function to generate audio in parallel
 def generate_audio_from_text_parallel(text_chunk, audio_output_path):
     threading.Thread(target=generate_audio_from_text, args=(text_chunk, audio_output_path)).start()
-
+    
 # Function to save chunks, generate audio, and create a full audio file
-def save_chunks_and_generate_audio(cleaned_response, output_folder, base_filename):
+def save_chunks_and_generate_audio(cleaned_response, output_folder, base_filename,image_folder,output_video):
     words = cleaned_response.split()
     chunk_size = 200
     num_chunks = len(words) // chunk_size + (1 if len(words) % chunk_size != 0 else 0)
@@ -96,8 +97,8 @@ def save_chunks_and_generate_audio(cleaned_response, output_folder, base_filenam
 
     for i in range(num_chunks):
         chunk = ' '.join(words[i * chunk_size:(i + 1) * chunk_size])
-        chunk_txt_path = os.path.join(output_folder, f"{base_filename}_chunk_{i + 1}.txt")
-        audio_output_path = os.path.join(output_folder, f"{base_filename}_chunk_{i + 1}_audio.mp3")
+        chunk_txt_path = os.path.join(output_folder, f"chunk_{i + 1}.txt")
+        audio_output_path = os.path.join(output_folder, f"chunk_{i + 1}_audio.mp3")
 
         with open(chunk_txt_path, 'w', encoding='utf-8') as txt_file:
             txt_file.write(chunk)
@@ -106,15 +107,31 @@ def save_chunks_and_generate_audio(cleaned_response, output_folder, base_filenam
         print(f"Saved {chunk_txt_path} and started audio generation for it.")
         
         all_text.append(chunk)
-
-    full_text = ' '.join(all_text)
-    full_audio_output_path = os.path.join(output_folder, f"{base_filename}_full_audio.mp3")
     
-    generate_audio_from_text(full_text, full_audio_output_path)
-    print(f"Generated complete audio file: {full_audio_output_path}")
+    # threading.Thread(target=process_files_for_keywords, args=(output_folder, image_folder, output_video, f"{base_filename}_full_audio_temp.mp3")).start()
+    full_text = ' '.join(all_text)
+    
+    audio_path = r"./output_txt/"+f"{base_filename}_full_audio.mp3"
+
+    if not os.path.exists(audio_path):    
+        full_audio_output_path = os.path.join(output_folder, f"{base_filename}_full_audio.mp3")
+        generate_audio_from_text(full_text, full_audio_output_path)
+        print(f"Generated complete audio file: {full_audio_output_path}")
+
+    else:
+        print("Audio file already exists. Skipping the process.")
+    
+    video_path = r"./Keywords/"+f"{base_filename}_video_with_audio.mp4"
+
+    if not os.path.exists(video_path):
+        print("Video file does not exist. Processing files for keywords and generating video with audio...")
+        process_files_for_keywords(output_folder, image_folder, output_video,f"{base_filename}_full_audio.mp3")
+    else:
+        print("Video file already exists. Skipping the process.")
+    
 
 # Function to process a single PDF
-def process_single_pdf(pdf_file, input_folder, output_folder):
+def process_single_pdf(pdf_file, input_folder, output_folder,image_folder,output_video):
     pdf_path = os.path.join(input_folder, pdf_file)
     txt_output_path = os.path.join(output_folder, f"{os.path.splitext(pdf_file)[0]}_raw.txt")
     gemini_output_path = os.path.join(output_folder, f"{os.path.splitext(pdf_file)[0]}_processed.txt")
@@ -144,7 +161,7 @@ def process_single_pdf(pdf_file, input_folder, output_folder):
             summary_file.write(summary_response)
         print(f"Summary generated and saved to {summary_output_path}")
 
-    save_chunks_and_generate_audio(cleaned_response, output_folder, os.path.splitext(pdf_file)[0])
+    save_chunks_and_generate_audio(cleaned_response, output_folder, os.path.splitext(pdf_file)[0],image_folder,output_video)
 
     if os.path.exists(txt_output_path):
         os.remove(txt_output_path)
