@@ -4,7 +4,6 @@ PyPDF2
 werkzeug
 mysqlclient
 flask_cors
-re
 pdfminer
 pydub
 gtts
