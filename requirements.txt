@@ -2,7 +2,6 @@ langchain_google_genai
 langchain
 PyPDF2
 werkzeug
-mysqlclient
 flask
 flask_cors
 pdfminer
